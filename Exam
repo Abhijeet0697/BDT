@@ -1,0 +1,151 @@
+Question 1:
+
+import java.io.*;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.DoubleWritable;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.conf.*;
+import org.apache.hadoop.fs.*;
+import org.apache.hadoop.mapreduce.lib.input.*;
+import org.apache.hadoop.mapreduce.lib.output.*;
+
+
+public class AllTimeHigh {
+	
+	public static class MapClass extends Mapper<LongWritable,Text,Text,DoubleWritable>
+	   {
+	      public void map(LongWritable key, Text value, Context context)
+	      {	    	  
+	         try{
+	            String[] str = value.toString().split(",");	 
+	            double high = Double.parseDouble(str[4]);
+	            context.write(new Text(str[1]),new DoubleWritable(high));
+	         }
+	         catch(Exception e)
+	         {
+	            System.out.println(e.getMessage());
+	         }
+	      }
+	   }
+	
+	  public static class ReduceClass extends Reducer<Text,DoubleWritable,Text,DoubleWritable>
+	   {
+		    private DoubleWritable result = new DoubleWritable();
+		    
+		    public void reduce(Text key, Iterable<DoubleWritable> values,Context context) throws IOException, InterruptedException {
+		      double max = 0.00;
+				
+		         for (DoubleWritable val : values)
+		         {       	
+		        	if (val.get() > max) {
+		        		max = val.get();
+		        	}
+		         }
+		         
+		      result.set(max);		      
+		      context.write(key, result);
+		      
+		    }
+	   }
+	  public static void main(String[] args) throws Exception {
+		    Configuration conf = new Configuration();
+		    conf.set("mapreduce.input.fileinputformat.split.maxsize", "28311552");
+		    Job job = Job.getInstance(conf, "All Time High Price");
+		    job.setJarByClass(AllTimeHigh.class);
+		    job.setMapperClass(MapClass.class);
+		    job.setCombinerClass(ReduceClass.class);
+		    job.setReducerClass(ReduceClass.class);
+		    job.setNumReduceTasks(1);
+		    job.setOutputKeyClass(Text.class);
+		    job.setOutputValueClass(DoubleWritable.class);
+		    FileInputFormat.addInputPath(job, new Path(args[0]));
+		    FileOutputFormat.setOutputPath(job, new Path(args[1]));
+		    System.exit(job.waitForCompletion(true) ? 0 : 1);
+		  }
+
+
+Hadoop jar Myjar.jar AllTimeHigh user/bigcdac432590/training/NYSE.csv user/bigcdac432590/training/outexam
+=============================================================================================================
+create table customer1(custno INT, firstname STRING, lastname STRING, age INT, profession STRING)
+row format delimited
+fields terminated by ','
+stored as textfile;
+
+show tables;
+
+LOAD DATA LOCAL INPATH 'custs.txt' OVERWRITE INTO TABLE customer1;
+
+
+select profession,count(custno) from customer1 group by profession limit 10;
+
+
+----------------------------------------------------------------------------------------
+
+
+create table txnrecords(txnno INT, txndate STRING, custno INT, amount DOUBLE, 
+category STRING, product STRING, city STRING, state STRING, spendby STRING)
+row format delimited
+fields terminated by ','
+stored as textfile;
+
+LOAD DATA LOCAL INPATH 'txn1.txt' OVERWRITE INTO TABLE txnrecords;
+
+select product,round(sum(amount),2) as total from txnrecords group by product order by total desc limit 10;
+================================================================================================================
+
+create table txnrecs(txnno INT, txndate STRING, custno INT, amount DOUBLE,
+product STRING, city STRING, state STRING, spendby STRING)
+partitioned by (category STRING)
+row format delimited
+fields terminated by ','
+stored as textfile;
+
+set hive.exec.dynamic.partition.mode=nonstrict;
+set hive.exec.dynamic.partition=true;
+
+INSERT OVERWRITE TABLE txnrecs PARTITION(category) select txn.txnno, txn.txndate,txn.custno, txn.amount,txn.product,txn.city,txn.state, txn.spendby, txn.category from txnrecords txn DISTRIBUTE By category
+
+**********************************************************************************************
+**********************Identifying the highest revenue generation for which year
+
+
+from pyspark.sql.types import StructType, StringType, IntegerType, DoubleType, LongType  
+
+
+
+schema2 = StructType().add("Year",StringType(),True).add("Quarter",StringType(),True).add("ARPS",DoubleType(),True).add("Booked_seats",IntegerType(),True) 
+
+df_with_schema2 = spark.read.format("csv").option("header", "True").schema(schema2).load("hdfs://nameservice1/user/bigcdac432590/training/airlines.csv")
+
+df_with_schema2.count()
+
+df_with_schema2.registerTempTable("airlines")
+
+
+
+Year_rev = spark.sql("select year, round(sum(arps*booked_seats)/1000000,2) as total_in_million  from airlines group by year order by total_in_million desc")
+
+Year_rev.show(10)
+
+**************************************************************************
+
+from pyspark.sql.types import StructType, StringType, IntegerType, DoubleType, LongType  
+
+
+
+schema2 = StructType().add("Year",StringType(),True).add("Quarter",StringType(),True).add("ARPS",DoubleType(),True).add("Booked_seats",IntegerType(),True) 
+
+df_with_schema2 = spark.read.format("csv").option("header", "True").schema(schema2).load("hdfs://nameservice1/user/bigcdac432590/training/airlines.csv")
+
+df_with_schema2.count()
+
+df_with_schema2.registerTempTable("airlines")
+
+Year_rev = spark.sql("select year, sum(booked_seats) as total_pass  from airlines group by year order by total_pass desc")
+
+
+
+
